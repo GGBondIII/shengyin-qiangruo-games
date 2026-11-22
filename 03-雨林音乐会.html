@@ -252,7 +252,7 @@ function spawnSymbol(){
   var y=-80;
   btn.style.left=x+"px"; btn.style.top=y+"px";
   btn.dataset.sym=sym;
-  btn.addEventListener("click",function(){ onSymbolClick(btn); });
+  btn.addEventListener("pointerdown",function(e){ if(e.button!==undefined&&e.button!==0)return; onSymbolClick(btn); });
   stage.appendChild(btn);
   symbols.push({el:btn,sym:sym,y:y,nextStep:Date.now()+SPEEDS[speed].stepMs});
 }
@@ -364,7 +364,7 @@ window.__game={
   start:startGame,
   setSpeed:function(s){ var b=document.querySelector('.speedbar button[data-speed="'+s+'"]'); if(b) b.click(); },
   clickFirst:function(sym){
-    for(var i=0;i<symbols.length;i++){ if(!sym||symbols[i].sym===sym){ symbols[i].el.click(); return symbols[i].sym; } }
+    for(var i=0;i<symbols.length;i++){ if(!sym||symbols[i].sym===sym){ onSymbolClick(symbols[i].el); return symbols[i].sym; } }
     return null;
   },
   spawnForTest:function(sym){
