@@ -113,6 +113,20 @@ footer .note{background:rgba(0,0,0,.35);border-radius:999px;padding:5px 12px}
   #score{font-size:17px}
   .symbol{width:68px;height:68px;line-height:68px;font-size:40px}
 }
+
+/* === v4: 一整屏：舞台占满剩下的屏幕，不用往下拖；P/F 能点的范围再放大 === */
+html,body{height:100%}
+body{overflow:hidden}
+.wrap{max-width:none;width:100%;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:10px 14px 8px;margin:0 auto}
+header{flex:0 0 auto;padding:8px 12px}
+.speedbar{flex:0 0 auto;margin:8px 0;padding:8px 10px}
+#listenHint{flex:0 0 auto}
+#stage{flex:1 1 auto;height:auto;min-height:0}
+@keyframes rainfall{from{transform:translateY(0)}to{transform:translateY(110vh)}}
+.legend{flex:0 0 auto}
+footer{flex:0 0 auto;margin-top:6px}
+.symbol{width:84px;height:84px;line-height:84px;font-size:48px;z-index:4}
+.symbol::after{inset:-24px}
 </style>
 </head>
 <body>
@@ -178,20 +192,21 @@ var startBtn=document.getElementById("startBtn");
 var againBtn=document.getElementById("againBtn");
 var rainHeavy=document.getElementById("rainHeavy");
 var rainLight=document.getElementById("rainLight");
+rainHeavy.volume=1.0; rainLight.volume=0.4; /* 大雨(强)音量大，小雨(弱)音量小 */
 
 var SPEEDS={slow:{stepMs:850,spawnMs:1700,label:"极慢"},
             medium:{stepMs:500,spawnMs:1200,label:"中等"},
             fast:{stepMs:280,spawnMs:900,label:"极快"}};
 var STEP_PX=34, PHRASE_MS=6000, PASS_SCORE=50;
 var score=0, phase="heavy", speed="medium", playing=false, passed=false;
-var symbols=[], symbolId=0, spawnTimer=null, phaseTimer=null, toastTimer=null;
+var symbols=[], symbolId=0, symZ=10, spawnTimer=null, phaseTimer=null, toastTimer=null;
 var audioCtx=null, forceSym=null, audioOff=false;
 
 /* ---- stop all sound when leaving the page (return to PPT = silence) ---- */
 function stopAllAudio(){
   audioOff=true;
-  try{ rainHeavy.pause(); }catch(e){}
-  try{ rainLight.pause(); }catch(e){}
+  try{ rainHeavy.pause(); rainHeavy.currentTime=0; }catch(e){}
+  try{ rainLight.pause(); rainLight.currentTime=0; }catch(e){}
   if(audioCtx){ try{ audioCtx.suspend(); }catch(e){} }
 }
 function pauseGame(){
@@ -202,6 +217,8 @@ document.addEventListener("visibilitychange",function(){ if(document.hidden) pau
 window.addEventListener("pagehide",stopAllAudio);
 window.addEventListener("beforeunload",stopAllAudio);
 window.addEventListener("blur",pauseGame);
+/* 点任何链接离开本页时，先当场断音，不等页面切走 */
+document.querySelectorAll("a[href]").forEach(function(a){ a.addEventListener("pointerdown",stopAllAudio); a.addEventListener("click",stopAllAudio); });
 
 /* ---- rain backdrop drops (visual only; the sound is the real cue) ---- */
 var drops=[];
@@ -266,14 +283,16 @@ function spawnSymbol(){
   btn.className="symbol"+(sym==="p"?" weak":"");
   btn.textContent=sym;
   btn.setAttribute("aria-label",sym==="f"?"强 f":"弱 p");
-  var maxX=Math.max(0,stage.clientWidth-80);
-  var x=Math.floor(Math.random()*maxX);
+  var maxX=Math.max(0,stage.clientWidth-100);
+  var x=8+Math.floor(Math.random()*Math.max(1,maxX-8));
   var y=-80;
   btn.style.left=x+"px"; btn.style.top=y+"px";
   btn.dataset.sym=sym;
+  btn.style.zIndex=(++symZ); /* 后掉下来的在上面，先点先算，不被压住 */
   btn.addEventListener("pointerdown",function(e){ handlePress(btn,e); });
   btn.addEventListener("mousedown",function(e){ handlePress(btn,e); });
   btn.addEventListener("touchstart",function(e){ handlePress(btn,e); },{passive:true});
+  btn.addEventListener("click",function(e){ handlePress(btn,e); });
   stage.appendChild(btn);
   symbols.push({el:btn,sym:sym,y:y,nextStep:Date.now()+SPEEDS[speed].stepMs});
 }
@@ -319,6 +338,17 @@ function handlePress(btn,e){
   if(btn.dataset.done) return; // already scored this symbol
   onSymbolClick(btn);
 }
+/* 兜底：点在符号旁边一点点（没正中）也算——找最近的符号，70px 内就按它算，解决“有的 P/F 点不到” */
+stage.addEventListener("pointerdown",function(e){
+  if(e.target!==stage) return;
+  var sr=stage.getBoundingClientRect(), best=null, bd=1e18;
+  symbols.forEach(function(s){
+    var r=s.el.getBoundingClientRect();
+    var cx=r.left+r.width/2-e.clientX, cy=r.top+r.height/2-e.clientY, d=cx*cx+cy*cy;
+    if(d<bd){ bd=d; best=s; }
+  });
+  if(best && bd<=70*70) handlePress(best.el,e);
+});
 function onSymbolClick(btn){
   if(!playing||passed) return;
   var sym=btn.dataset.sym;
