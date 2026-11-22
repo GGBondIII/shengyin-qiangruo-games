@@ -65,6 +65,7 @@ header h1 small{display:block;font-size:12px;color:#5a7d5e;font-weight:400}
   cursor:pointer;user-select:none;padding:0;
 }
 .symbol.weak{color:#1565c0;border-color:#64b5f6;box-shadow:0 5px 0 #1e88e5,0 8px 16px rgba(0,0,0,.35)}
+.symbol::after{content:"";position:absolute;inset:-12px;}
 .symbol:active{transform:scale(.92)}
 .symbol.shake{animation:shake .4s}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
@@ -184,7 +185,23 @@ var SPEEDS={slow:{stepMs:850,spawnMs:1700,label:"极慢"},
 var STEP_PX=34, PHRASE_MS=6000, PASS_SCORE=50;
 var score=0, phase="heavy", speed="medium", playing=false, passed=false;
 var symbols=[], symbolId=0, spawnTimer=null, phaseTimer=null, toastTimer=null;
-var audioCtx=null, forceSym=null;
+var audioCtx=null, forceSym=null, audioOff=false;
+
+/* ---- stop all sound when leaving the page (return to PPT = silence) ---- */
+function stopAllAudio(){
+  audioOff=true;
+  try{ rainHeavy.pause(); }catch(e){}
+  try{ rainLight.pause(); }catch(e){}
+  if(audioCtx){ try{ audioCtx.suspend(); }catch(e){} }
+}
+function pauseGame(){
+  stopAllAudio();
+  if(playing && !passed){ startOverlay.classList.remove("hidden"); }
+}
+document.addEventListener("visibilitychange",function(){ if(document.hidden) pauseGame(); });
+window.addEventListener("pagehide",stopAllAudio);
+window.addEventListener("beforeunload",stopAllAudio);
+window.addEventListener("blur",pauseGame);
 
 /* ---- rain backdrop drops (visual only; the sound is the real cue) ---- */
 var drops=[];
@@ -198,6 +215,7 @@ for(var i=0;i<26;i++){
 
 /* ---- synthesised feedback sounds (Web Audio, no files) ---- */
 function ctx(){
+  if(audioOff) return null;
   if(!audioCtx){ try{ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; } }
   if(audioCtx && audioCtx.state==="suspended"){ audioCtx.resume(); }
   return audioCtx;
@@ -220,6 +238,7 @@ function playFanfare(){ var n=[523,659,784,1046,1318]; for(var i=0;i<n.length;i+
 function applyPhase(){
   stage.classList.remove("heavy","light");
   stage.classList.add(phase);
+  if(audioOff){ rainLight.pause(); rainHeavy.pause(); return; }
   if(phase==="heavy"){
     rainLight.pause();
     var p=rainHeavy.play(); if(p&&p.catch){p.catch(function(){});}
@@ -252,7 +271,9 @@ function spawnSymbol(){
   var y=-80;
   btn.style.left=x+"px"; btn.style.top=y+"px";
   btn.dataset.sym=sym;
-  btn.addEventListener("pointerdown",function(e){ if(e.button!==undefined&&e.button!==0)return; onSymbolClick(btn); });
+  btn.addEventListener("pointerdown",function(e){ handlePress(btn,e); });
+  btn.addEventListener("mousedown",function(e){ handlePress(btn,e); });
+  btn.addEventListener("touchstart",function(e){ handlePress(btn,e); },{passive:true});
   stage.appendChild(btn);
   symbols.push({el:btn,sym:sym,y:y,nextStep:Date.now()+SPEEDS[speed].stepMs});
 }
@@ -287,11 +308,23 @@ function floatScore(x,y){
   f.style.left=x+"px"; f.style.top=y+"px"; stage.appendChild(f);
   setTimeout(function(){ f.remove(); },950);
 }
+/* ---- press handling: pointerdown + mousedown + touchstart, deduped ----
+   (some embedded browsers fire pointer events unreliably;
+    one physical press must judge exactly once) */
+function handlePress(btn,e){
+  if(e && e.button!==undefined && e.button!==0) return; // left button / touch only
+  var now=Date.now();
+  if(btn._lastPress && now-btn._lastPress<300) return; // same press via another event type
+  btn._lastPress=now;
+  if(btn.dataset.done) return; // already scored this symbol
+  onSymbolClick(btn);
+}
 function onSymbolClick(btn){
   if(!playing||passed) return;
   var sym=btn.dataset.sym;
   var correct=(phase==="heavy"&&sym==="f")||(phase==="light"&&sym==="p");
   if(correct){
+    btn.dataset.done="1";
     score+=10;
     scoreEl.textContent="分数："+score+"/50";
     playDing();
@@ -329,6 +362,7 @@ function passGame(){
 
 /* ---- start / restart ---- */
 function startGame(){
+  audioOff=false;
   ctx();
   score=0; passed=false; playing=true;
   scoreEl.textContent="分数：0/50";
@@ -357,7 +391,7 @@ speedBtns.forEach(function(b){
 
 /* ---- test hook (invisible): lets an automated check drive the game ---- */
 window.__game={
-  getState:function(){ return {score:score,phase:phase,speed:speed,playing:playing,passed:passed,
+  getState:function(){ return {score:score,phase:phase,speed:speed,playing:playing,passed:passed,audioOff:audioOff,
     stepMs:SPEEDS[speed].stepMs,spawnMs:SPEEDS[speed].spawnMs,symbols:symbols.length,
     heavyPaused:rainHeavy.paused,lightPaused:rainLight.paused,
     heavySrc:rainHeavy.currentSrc.slice(0,30),lightSrc:rainLight.currentSrc.slice(0,30)}; },

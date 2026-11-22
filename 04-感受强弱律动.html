@@ -168,11 +168,34 @@ function paintDots(){
 }
 
 /* ---------- audio (all synthesised, no files) ---------- */
+var audioOff=false;
 function ac(){
+  if(audioOff) return null;
   if(!audioCtx){ try{ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; } }
   if(audioCtx && audioCtx.state==="suspended"){ audioCtx.resume(); }
   return audioCtx;
 }
+/* ---- stop all sound when leaving the page (return to PPT = silence) ---- */
+function stopMic(){
+  if(!micOn) return;
+  micOn=false; if(micRaf) cancelAnimationFrame(micRaf); micRaf=null;
+  if(micStream){ micStream.getTracks().forEach(function(t){ t.stop(); }); micStream=null; }
+  micBtn.textContent="🎤 打开麦克风"; micBtn.className="btn btn-mic";
+  micStatus.textContent="麦克风已关闭，点圆圈一样能玩。"; micMeter.style.display="none";
+}
+function stopAllAudio(){
+  audioOff=true;
+  stopMic();
+  if(audioCtx){ try{ audioCtx.suspend(); }catch(e){} }
+}
+function pauseGame(){
+  stopGame(); // stops the beat timer; "开始体验" is shown again
+  stopAllAudio();
+}
+document.addEventListener("visibilitychange",function(){ if(document.hidden) pauseGame(); });
+window.addEventListener("pagehide",stopAllAudio);
+window.addEventListener("beforeunload",stopAllAudio);
+window.addEventListener("blur",pauseGame);
 function noiseBuffer(ctx,dur){
   var b=ctx.createBuffer(1,Math.floor(ctx.sampleRate*dur),ctx.sampleRate), d=b.getChannelData(0);
   for(var i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*(1-i/d.length); }
@@ -287,7 +310,7 @@ function showBeat(i){
   rafId=requestAnimationFrame(tick);
 }
 function startGame(){
-  ac(); stopTimers(); playing=true; hits=0; taps=0; idx=-1;
+  audioOff=false; ac(); stopTimers(); playing=true; hits=0; taps=0; idx=-1;
   completeBox.style.display="none";
   startBtn.textContent="■ 停止体验"; startBtn.className="btn btn-stop";
   say("跟着圆圈走！f 拍手，p 轻点 🎵", true);
@@ -351,10 +374,7 @@ function micLoop(){
 }
 micBtn.addEventListener("click", function(){
   if(micOn){ // turn off
-    micOn=false; if(micRaf) cancelAnimationFrame(micRaf);
-    if(micStream){ micStream.getTracks().forEach(function(t){ t.stop(); }); micStream=null; }
-    micBtn.textContent="🎤 打开麦克风"; micBtn.className="btn btn-mic";
-    micStatus.textContent="麦克风已关闭，点圆圈一样能玩。"; micMeter.style.display="none";
+    stopMic();
     return;
   }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){

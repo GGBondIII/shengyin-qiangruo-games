@@ -320,6 +320,18 @@ var REAL_SOUNDS = {
     } catch (e) { card.classList.remove("is-playing"); }
   }
 
+  /* ---- stop all sound when leaving the page (return to PPT = silence) ----
+     (all sounds here are short and gesture-triggered, so pausing +
+      suspending is enough; the next tap resumes via ac() as usual) */
+  function stopAllAudio(){
+    Object.keys(realAudio).forEach(function(id){ try{ realAudio[id].pause(); }catch(e){} });
+    if(actx){ try{ actx.suspend(); }catch(e){} }
+  }
+  document.addEventListener("visibilitychange",function(){ if(document.hidden) stopAllAudio(); });
+  window.addEventListener("pagehide",stopAllAudio);
+  window.addEventListener("beforeunload",stopAllAudio);
+  window.addEventListener("blur",stopAllAudio);
+
   /* ---------- UI ---------- */
   function setHint(text, cls) { hintEl.textContent = text; hintEl.className = "hint " + (cls || "info"); }
   function updateProgress() {
@@ -418,6 +430,8 @@ var REAL_SOUNDS = {
   /* expose a tiny hook for automated testing only (no network, no behaviour change) */
   window.__L2__ = { get choices(){ return choices; }, get current(){ return current; },
     get passed(){ return passed; }, ANSWERS: ANSWERS,
+    get audioState(){ var p=[]; Object.keys(realAudio).forEach(function(id){ if(!realAudio[id].paused) p.push(id); });
+      return {actxState: actx?actx.state:null, playingSounds:p}; },
     realSounds: REAL_SOUNDS };
 })();
 </script>
