@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>声音的强弱 · 在线课堂</title>
+<style>
+  :root{
+    --coral:#EA6D72; --blue:#69ABE0; --indigo:#4147E1; --magenta:#F159EF; --purple:#493D89;
+    --bg:#F1F2FF; --ink:#333333; --gold:#FDBC60;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:"Microsoft YaHei","微软雅黑","PingFang SC","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink);
+    display:flex; flex-direction:column; min-height:100vh;
+  }
+  header{
+    background:var(--purple); color:#fff;
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:10px 16px;
+  }
+  header .title{font-size:20px; font-weight:700; letter-spacing:1px;}
+  header .sub{font-size:13px; opacity:.85;}
+  header .spacer{flex:1;}
+  .btn{
+    border:none; border-radius:999px; cursor:pointer;
+    font-family:inherit; font-weight:700; color:#fff;
+    padding:10px 20px; font-size:15px;
+    background:var(--coral);
+  }
+  .btn:hover{filter:brightness(1.08);}
+  .btn.blue{background:var(--blue);}
+  .btn.ghost{background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.6);}
+  main{flex:1; display:flex; flex-direction:column; align-items:center; padding:14px 12px 20px; gap:10px;}
+  .stage{
+    position:relative; width:100%; max-width:1280px;
+    background:#000; border-radius:12px; overflow:hidden;
+    box-shadow:0 6px 24px rgba(73,61,137,.25);
+  }
+  .stage img{display:block; width:100%; height:auto;}
+  .hotzone{
+    position:absolute; border:none; background:transparent; cursor:pointer;
+    border-radius:12px; padding:0;
+  }
+  .hotzone:hover{background:rgba(255,255,255,.14); outline:3px solid rgba(255,255,255,.75);}
+  .hotzone:focus-visible{outline:3px solid #fff;}
+  .nav{
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:46px; height:46px; border-radius:50%; border:none; cursor:pointer;
+    background:rgba(73,61,137,.72); color:#fff; font-size:26px; line-height:1;
+    display:flex; align-items:center; justify-content:center; z-index:5;
+  }
+  .nav:hover{background:var(--purple);}
+  .nav.prev{left:10px;}
+  .nav.next{right:10px;}
+  .toolbar{display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:center;}
+  .toolbar .page{font-size:16px; font-weight:700; min-width:70px; text-align:center;}
+  .toolbar .btn{background:var(--purple);}
+  .toolbar .btn.media{background:var(--coral);}
+  .hint{font-size:13px; color:#666; text-align:center; max-width:1280px; line-height:1.7;}
+  /* modal */
+  .modal{
+    position:fixed; inset:0; z-index:50;
+    background:rgba(20,12,50,.88);
+    display:flex; flex-direction:column;
+  }
+  .modal[hidden]{display:none;}
+  .modal-bar{
+    display:flex; align-items:center; gap:12px;
+    padding:10px 16px; background:var(--purple); color:#fff; flex:none;
+  }
+  .modal-bar .mtitle{font-size:17px; font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .modal-bar .btn{padding:8px 18px; font-size:14px; flex:none;}
+  .modal-body{flex:1; min-height:0; display:flex; flex-direction:column;}
+  .modal-body iframe{flex:1; width:100%; border:0; background:#111; min-height:0;}
+  .modal-body video{width:100%; max-height:100%; background:#000; outline:none;}
+  .modal-body audio{width:100%; max-width:560px; margin:24px auto;}
+  .video-list{flex:1; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:18px; align-items:center;}
+  .video-item{width:100%; max-width:960px;}
+  .video-item h3{color:#fff; font-size:16px; margin-bottom:8px;}
+  .video-item video{width:100%; border-radius:8px; background:#000;}
+  .video-item audio{width:100%;}
+  .modal-note{color:#ddd; font-size:13px; text-align:center; padding:6px 12px 12px; flex:none;}
+  @media (max-width:640px){
+    header .title{font-size:17px;}
+    header .sub{display:none;}
+    .nav{width:38px; height:38px; font-size:22px;}
+    .btn{padding:9px 15px; font-size:14px;}
+    .modal-note{font-size:12px; padding:4px 10px 8px; line-height:1.5;}
+    .modal-bar .mtitle{font-size:15px;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">声音的强弱 · 在线课堂</span>
+  <span class="sub">教科版四年级上册 · 声音单元</span>
+  <span class="spacer"></span>
+  <button class="btn ghost" id="menuBtn" type="button">游戏菜单</button>
+</header>
+<main>
+  <div class="stage" id="stage">
+    <img id="slideImg" src="slides/slide-01.jpg" alt="幻灯片">
+    <div id="hotzones"></div>
+    <button class="nav prev" id="prevArrow" type="button" aria-label="上一页">‹</button>
+    <button class="nav next" id="nextArrow" type="button" aria-label="下一页">›</button>
+  </div>
+  <div class="toolbar">
+    <button class="btn" id="prevBtn" type="button">← 上一页</button>
+    <span class="page" id="pageLabel">1 / 23</span>
+    <button class="btn" id="nextBtn" type="button">下一页 →</button>
+    <button class="btn media" id="mediaBtn" type="button" hidden>▶ 播放本页视频</button>
+  </div>
+  <p class="hint">键盘 ← → 翻页。第 19 页点游戏按钮，游戏就在本页弹出直接玩（需联网）；幻灯片图片和实验视频不联网也能看。</p>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-bar">
+    <span class="mtitle" id="modalTitle"></span>
+    <button class="btn" id="modalClose" type="button">✕ 关闭</button>
+  </div>
+  <div class="modal-body" id="modalBody"></div>
+  <div class="modal-note" id="modalNote"></div>
+</div>
+
+<script>
+var TOTAL = 23, MENU_PAGE = 19;
+var GAMES = [
+  {name:"第1关 · 魔法对对碰", desc:"听声音，把气球拖进强 / 弱框", color:"#EA6D72",
+   url:"https://ggbondiii.github.io/shengyin-qiangruo-games/01-%E9%AD%94%E6%B3%95%E5%AF%B9%E5%AF%B9%E7%A2%B0.html"},
+  {name:"第2关 · 魔法声音盲盒", desc:"听一听，选强魔法瓶还是弱魔法瓶", color:"#69ABE0",
+   url:"https://ggbondiii.github.io/shengyin-qiangruo-games/02-%E9%AD%94%E6%B3%95%E5%A3%B0%E9%9F%B3%E7%9B%B2%E7%9B%92.html"},
+  {name:"第3关 · 雨林音乐会", desc:"听雨声，点中对应的强 / 弱符号", color:"#4147E1",
+   url:"https://ggbondiii.github.io/shengyin-qiangruo-games/03-%E9%9B%A8%E6%9E%97%E9%9F%B3%E4%B9%90%E4%BC%9A.html"},
+  {name:"第4关 · 感受强弱律动", desc:"跟着音乐，强拍手、弱点指", color:"#F159EF",
+   url:"https://ggbondiii.github.io/shengyin-qiangruo-games/04-%E6%84%9F%E5%8F%97%E5%BC%BA%E5%BC%B1%E5%BE%8B%E5%8A%A8.html"},
+  {name:"音浪球", desc:"全班一起喊，声音越大，彩球越多", color:"#493D89",
+   url:"https://ggbondiii.github.io/shengyin-qiangruo-games/yinlangqiu.html"}
+];
+/* 5 个菜单按钮在幻灯片上的位置（占幻灯片宽/高的百分比，取自 PPT 原稿） */
+var HOTZONES = [
+  {top:18.88, height:9.92}, {top:31.04, height:9.92}, {top:43.20, height:9.92},
+  {top:55.36, height:9.92}, {top:67.53, height:9.92}
+];
+var MEDIA = {
+  3:[{type:"audio", file:"media/media1.mp3", label:"本页音频"}],
+  7:[{type:"video", file:"media/media2.mp4", label:"探究：钢尺振动与声音强弱的关系"}],
+  10:[{type:"video", file:"media/media3.mp4", label:"探究：鼓面振动与声音强弱的关系"}],
+  12:[{type:"video", file:"media/media4.mp4", label:"探究：音叉振动与声音强弱的关系"}],
+  17:[{type:"video", file:"media/media2.mp4", label:"探究：钢尺振动与声音强弱的关系"},
+      {type:"video", file:"media/media3.mp4", label:"探究：鼓面振动与声音强弱的关系"},
+      {type:"video", file:"media/media4.mp4", label:"探究：音叉振动与声音强弱的关系"}],
+  21:[{type:"video", file:"media/media5.mp4", label:"分贝"}]
+};
+
+var cur = 1;
+var slideImg = document.getElementById("slideImg"),
+    hotzones = document.getElementById("hotzones"),
+    pageLabel = document.getElementById("pageLabel"),
+    mediaBtn = document.getElementById("mediaBtn"),
+    modal = document.getElementById("modal"),
+    modalTitle = document.getElementById("modalTitle"),
+    modalBody = document.getElementById("modalBody"),
+    modalNote = document.getElementById("modalNote");
+
+function pad(n){ return (n<10?"0":"") + n; }
+
+function showSlide(n){
+  if(n<1) n=1; if(n>TOTAL) n=TOTAL;
+  cur = n;
+  slideImg.src = "slides/slide-" + pad(n) + ".jpg";
+  slideImg.alt = "第 " + n + " 页，共 " + TOTAL + " 页";
+  pageLabel.textContent = n + " / " + TOTAL;
+  document.getElementById("prevBtn").disabled = (n===1);
+  document.getElementById("nextBtn").disabled = (n===TOTAL);
+  /* 菜单页：叠加 5 个可点热区 */
+  hotzones.innerHTML = "";
+  if(n===MENU_PAGE){
+    GAMES.forEach(function(g,i){
+      var b=document.createElement("button");
+      b.type="button"; b.className="hotzone";
+      b.style.left="4.7%"; b.style.width="90.6%";
+      b.style.top=HOTZONES[i].top+"%"; b.style.height=HOTZONES[i].height+"%";
+      b.setAttribute("aria-label", g.name+"："+g.desc);
+      b.title = g.name+"："+g.desc;
+      b.addEventListener("click", function(){ openGame(i); });
+      hotzones.appendChild(b);
+    });
+  }
+  /* 本页有视频/音频：显示播放按钮 */
+  var m = MEDIA[n];
+  if(m){
+    mediaBtn.hidden = false;
+    mediaBtn.textContent = (m[0].type==="audio") ? "▶ 播放本页音频" : "▶ 播放本页视频";
+  } else {
+    mediaBtn.hidden = true;
+  }
+  if(history.replaceState){
+    try{ history.replaceState(null,"","?slide="+n); }catch(e){}
+  }
+}
+
+function openGame(i){
+  var g=GAMES[i];
+  modalTitle.textContent = g.name+" · "+g.desc;
+  modalNote.textContent = "游戏在框内直接玩，不用跳出本页。音浪球需要麦克风权限，浏览器问你时点“允许”。";
+  modalBody.innerHTML = "";
+  var f=document.createElement("iframe");
+  f.src=g.url; f.setAttribute("allow","microphone; autoplay; fullscreen");
+  f.setAttribute("allowfullscreen","");
+  f.title=g.name;
+  modalBody.appendChild(f);
+  modal.hidden=false;
+  document.body.style.overflow="hidden";
+}
+
+function openMedia(){
+  var m=MEDIA[cur]; if(!m) return;
+  modalTitle.textContent = "第 "+cur+" 页 · 实验视频";
+  modalNote.textContent = "视频已下载到本页，不联网也能播放。";
+  modalBody.innerHTML = "";
+  var wrap=document.createElement("div");
+  wrap.className="video-list";
+  m.forEach(function(item){
+    var box=document.createElement("div");
+    box.className="video-item";
+    var h=document.createElement("h3");
+    h.textContent=item.label;
+    box.appendChild(h);
+    if(item.type==="video"){
+      var v=document.createElement("video");
+      v.src=item.file; v.controls=true; v.setAttribute("playsinline","");
+      box.appendChild(v);
+    }else{
+      var a=document.createElement("audio");
+      a.src=item.file; a.controls=true;
+      box.appendChild(a);
+    }
+    wrap.appendChild(box);
+  });
+  modalBody.appendChild(wrap);
+  modal.hidden=false;
+  document.body.style.overflow="hidden";
+  var first=wrap.querySelector("video");
+  if(first){ first.play().catch(function(){}); }
+}
+
+function closeModal(){
+  modal.hidden=true;
+  modalBody.innerHTML="";
+  document.body.style.overflow="";
+}
+
+document.getElementById("prevBtn").addEventListener("click",function(){ showSlide(cur-1); });
+document.getElementById("nextBtn").addEventListener("click",function(){ showSlide(cur+1); });
+document.getElementById("prevArrow").addEventListener("click",function(){ showSlide(cur-1); });
+document.getElementById("nextArrow").addEventListener("click",function(){ showSlide(cur+1); });
+document.getElementById("menuBtn").addEventListener("click",function(){ showSlide(MENU_PAGE); });
+mediaBtn.addEventListener("click",openMedia);
+document.getElementById("modalClose").addEventListener("click",closeModal);
+modal.addEventListener("click",function(e){ if(e.target===modal) closeModal(); });
+document.addEventListener("keydown",function(e){
+  if(!modal.hidden){
+    if(e.key==="Escape") closeModal();
+    return;
+  }
+  if(e.key==="ArrowLeft") showSlide(cur-1);
+  else if(e.key==="ArrowRight") showSlide(cur+1);
+});
+
+/* 支持直接链接：?slide=19&game=1 打开第 1 个游戏 */
+(function init(){
+  var q=new URLSearchParams(location.search);
+  var s=parseInt(q.get("slide")||"1",10);
+  if(isNaN(s)||s<1||s>TOTAL) s=1;
+  showSlide(s);
+  var g=parseInt(q.get("game")||"",10);
+  if(!isNaN(g)&&g>=1&&g<=GAMES.length&&s===MENU_PAGE){
+    setTimeout(function(){ openGame(g-1); }, 300);
+  }
+})();
+</script>
+</body>
+</html>
