@@ -14,8 +14,6 @@
   #volbar { position: fixed; top: 14px; left: 4%; right: 4%; height: 40px; z-index: 5; pointer-events: none; }
   #volTrack { position: relative; height: 14px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.35); border-radius: 7px; pointer-events: auto; cursor: pointer; touch-action: none; }
   #volFill { height: 100%; width: 0%; background: linear-gradient(90deg, #38d977, #ffd23f 55%, #ff5a5a); border-radius: 7px; transition: width 0.08s linear; }
-  #volMark { position: absolute; left: 30%; top: -5px; bottom: -5px; width: 3px; background: #fff; }
-  #volMarkLabel { position: absolute; left: 30%; top: 20px; transform: translateX(-50%); font-size: 12px; color: #fff; opacity: 0.9; }
   #volText { position: absolute; right: 0; top: 20px; font-size: 13px; font-weight: bold; color: #fff; }
   #hint { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; font-size: 13px; color: rgba(255,255,255,0.85); background: rgba(0,0,0,0.35); padding: 4px 12px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
 </style>
@@ -25,9 +23,7 @@
 <div id="volbar">
   <div id="volTrack">
     <div id="volFill"></div>
-    <div id="volMark"></div>
   </div>
-  <div id="volMarkLabel">30%</div>
   <div id="volText">0%</div>
 </div>
 <div id="hint">正在准备…</div>
@@ -37,32 +33,6 @@
   var hint = document.getElementById('hint');
   var volFill = document.getElementById('volFill');
   var volText = document.getElementById('volText');
-  var volTrack = document.getElementById('volTrack');
-  var volMark = document.getElementById('volMark');
-  var volMarkLabel = document.getElementById('volMarkLabel');
-  // 起跳音量标准，默认 30%，可以在音量条上左右拖动白线随时改
-  var threshold = 0.30;
-  function setThreshold(v) {
-    threshold = Math.max(0.05, Math.min(0.95, v));
-    volMark.style.left = (threshold * 100) + '%';
-    volMarkLabel.style.left = (threshold * 100) + '%';
-    volMarkLabel.textContent = Math.round(threshold * 100) + '%';
-  }
-  function thresholdFromEvent(e) {
-    var rect = volTrack.getBoundingClientRect();
-    return (e.clientX - rect.left) / rect.width;
-  }
-  var draggingThreshold = false;
-  volTrack.addEventListener('pointerdown', function (e) {
-    draggingThreshold = true;
-    if (volTrack.setPointerCapture) volTrack.setPointerCapture(e.pointerId);
-    setThreshold(thresholdFromEvent(e));
-  });
-  volTrack.addEventListener('pointermove', function (e) {
-    if (draggingThreshold) setThreshold(thresholdFromEvent(e));
-  });
-  volTrack.addEventListener('pointerup', function () { draggingThreshold = false; });
-  volTrack.addEventListener('pointercancel', function () { draggingThreshold = false; });
   var COLORS = ['#ff7eb6', '#c58cff', '#5aa9ff', '#3fd9a4', '#ffd23f', '#ff8a3d', '#ffffff', '#ff6b6b', '#7ef0e0', '#b8ff5e'];
   var balls = [];
   var W = 0, H = 0;
@@ -85,12 +55,11 @@
     W = s.w; H = s.h;
     if (!balls.length) { initBalls(); }
     else if (oldW > 0 && oldH > 0 && (W !== oldW || H !== oldH)) {
-      // 窗口变了：球按比例挪到新尺寸里，铺满整个画面，别挤在旧角落
-      var sx = W / oldW, sy = H / oldH;
+      // 窗口变了：横向按比例挪，纵向一律落回新底部
+      var sx = W / oldW;
       balls.forEach(function (b) {
         b.x = Math.min(Math.max(b.x * sx, b.r), W - b.r);
-        b.baseY = Math.min(Math.max(b.baseY * sy, b.r + 6), H - b.r - 6);
-        b.y = Math.min(Math.max(b.y * sy, b.r), H - b.r - 6);
+        b.baseY = H - b.r - 2;
         if (b.y > b.baseY) b.y = b.baseY;
       });
     }
@@ -101,8 +70,7 @@
     balls = [];
     for (var i = 0; i < 60; i++) {
       var r = 14 + Math.random() * 26;
-      var top = 70, span = Math.max(40, H - top - r - 6);
-      var y = top + Math.random() * span; // 铺满整个画面，不再全贴在底边
+      var y = H - r - 2; // 静止时全部落在屏幕底部（贴着地面线）
       var color = COLORS[i % COLORS.length];
       var el = document.createElement('div');
       el.className = 'ball';
@@ -114,13 +82,10 @@
       el.style.opacity = balls[i].alpha;
     }
   }
-  function render(now) {
+  function render() {
     for (var i = 0; i < balls.length; i++) {
       var b = balls[i];
-      // 没声音时也轻轻漂浮，别看起来像坏了
-      var bob = (window.__ylqJump > 0) ? 0 : Math.sin(now * 1.3 + b.phase) * 3.5;
-      var ry = b.y + bob;
-      b.el.style.transform = 'translate(' + (b.x - b.r) + 'px,' + (ry - b.r) + 'px)';
+      b.el.style.transform = 'translate(' + (b.x - b.r) + 'px,' + (b.y - b.r) + 'px)';
     }
   }
   var lastFrameAt = 0;
@@ -137,25 +102,28 @@
       }
       level += (targetLevel - level) * 0.18;
       if (Math.abs(targetLevel - level) < 0.002) level = targetLevel;
-      // 音量标准：低于设定的阈值不跳；超过阈值才跳，越往上跳得越高
-      var jump = level < threshold ? 0 : (level - threshold) / (1 - threshold);
-      window.__ylqJump = jump;
       volFill.style.width = Math.round(level * 100) + '%';
       volText.textContent = Math.round(level * 100) + '%';
       var now = Date.now() / 1000;
       balls.forEach(function (b) {
-        if (jump <= 0) {
-          b.vy = 0; b.y += (b.baseY - b.y) * 0.12; b.x += Math.sin(now * 0.6 + b.phase) * 0.15;
-        } else {
-          if (b.y >= b.baseY - 0.5 && b.vy >= 0) { b.vy = -(6 + jump * 30 * b.speed); }
+        if (b.y >= b.baseY - 0.5 && b.vy >= 0) {
+          // 落在底部：按当前音量决定弹跳力度——越响跳得越高，安静时（音量≈0）就停在底部
+          if (level > 0.03) {
+            b.vy = -(level * 30 * b.speed) * (0.85 + Math.random() * 0.3);
+            if (b.vy > -1.2) b.vy = -1.2; // 有一点声音至少轻轻颤一下
+          } else {
+            b.vy = 0; b.y = b.baseY;
+          }
+        }
+        if (b.vy !== 0 || b.y < b.baseY) {
           b.vy += 0.7; b.y += b.vy;
           if (b.y > b.baseY) { b.y = b.baseY; b.vy = 0; }
           if (b.y < b.r) { b.y = b.r; b.vy = Math.abs(b.vy) * 0.55; }
-          b.x += Math.sin(now * 1.2 + b.phase) * 0.5 * jump;
+          b.x += Math.sin(now * 1.2 + b.phase) * 0.4 * level;
         }
         if (b.x < b.r) b.x = b.r; if (b.x > W - b.r) b.x = W - b.r; if (b.y < b.r) b.y = b.r;
       });
-      render(now);
+      render();
     } catch (err) { /* 单帧出错不许停掉整个动画 */ }
   }
   // 看门狗：内嵌浏览器偶尔会暂停动画帧，超过 250ms 没动静就用定时器顶上
