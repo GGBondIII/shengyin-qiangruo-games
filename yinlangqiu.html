@@ -14,6 +14,8 @@
   #volbar { position: fixed; top: 14px; left: 4%; right: 4%; height: 40px; z-index: 5; pointer-events: none; }
   #volTrack { position: relative; height: 14px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.35); border-radius: 7px; pointer-events: auto; cursor: pointer; touch-action: none; }
   #volFill { height: 100%; width: 0%; background: linear-gradient(90deg, #38d977, #ffd23f 55%, #ff5a5a); border-radius: 7px; transition: width 0.08s linear; }
+  #volMark { position: absolute; left: 30%; top: -5px; bottom: -5px; width: 3px; background: #fff; }
+  #volMarkLabel { position: absolute; left: 30%; top: 20px; transform: translateX(-50%); font-size: 12px; color: #fff; opacity: 0.9; white-space: nowrap; }
   #volText { position: absolute; right: 0; top: 20px; font-size: 13px; font-weight: bold; color: #fff; }
   #hint { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; font-size: 13px; color: rgba(255,255,255,0.85); background: rgba(0,0,0,0.35); padding: 4px 12px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
 </style>
@@ -23,7 +25,9 @@
 <div id="volbar">
   <div id="volTrack">
     <div id="volFill"></div>
+    <div id="volMark"></div>
   </div>
+  <div id="volMarkLabel">30% 跳到一半</div>
   <div id="volText">0%</div>
 </div>
 <div id="hint">正在准备…</div>
@@ -33,6 +37,33 @@
   var hint = document.getElementById('hint');
   var volFill = document.getElementById('volFill');
   var volText = document.getElementById('volText');
+  var volTrack = document.getElementById('volTrack');
+  var volMark = document.getElementById('volMark');
+  var volMarkLabel = document.getElementById('volMarkLabel');
+  // 可调阈值线（音量条上的白线，可以左右拖）：音量达到线的位置时，小球跳到屏幕一半高；
+  // 比线再高 45% 就跳到屏幕最上方；再往上，高度封顶、改成跳得越来越快。
+  var threshold = 0.30;
+  function setThreshold(v) {
+    threshold = Math.max(0.05, Math.min(0.95, v));
+    volMark.style.left = (threshold * 100) + '%';
+    volMarkLabel.style.left = (threshold * 100) + '%';
+    volMarkLabel.textContent = Math.round(threshold * 100) + '% 跳到一半';
+  }
+  function thresholdFromEvent(e) {
+    var rect = volTrack.getBoundingClientRect();
+    return (e.clientX - rect.left) / rect.width;
+  }
+  var draggingThreshold = false;
+  volTrack.addEventListener('pointerdown', function (e) {
+    draggingThreshold = true;
+    if (volTrack.setPointerCapture) volTrack.setPointerCapture(e.pointerId);
+    setThreshold(thresholdFromEvent(e));
+  });
+  volTrack.addEventListener('pointermove', function (e) {
+    if (draggingThreshold) setThreshold(thresholdFromEvent(e));
+  });
+  volTrack.addEventListener('pointerup', function () { draggingThreshold = false; });
+  volTrack.addEventListener('pointercancel', function () { draggingThreshold = false; });
   var COLORS = ['#ff7eb6', '#c58cff', '#5aa9ff', '#3fd9a4', '#ffd23f', '#ff8a3d', '#ffffff', '#ff6b6b', '#7ef0e0', '#b8ff5e'];
   var balls = [];
   var W = 0, H = 0;
@@ -98,25 +129,35 @@
       lastFrameAt = Date.now();
       if (mode === 'demo') {
         var now0 = Date.now() / 1000;
-        targetLevel = 0.12 + 0.06 * Math.sin(now0 * 0.9);
+        targetLevel = 0.05 + 0.03 * Math.sin(now0 * 0.9);
       }
       level += (targetLevel - level) * 0.18;
       if (Math.abs(targetLevel - level) < 0.002) level = targetLevel;
       volFill.style.width = Math.round(level * 100) + '%';
       volText.textContent = Math.round(level * 100) + '%';
       var now = Date.now() / 1000;
+      // 音量 → 跳高：达到阈值线 = 半屏高；阈值+45% = 满屏高；再往上高度封顶、频率加快
+      var topPoint = Math.min(0.98, threshold + 0.45);
+      var hFrac, excess = 0;
+      if (level <= threshold) hFrac = threshold > 0 ? 0.5 * (level / threshold) : 0;
+      else if (level <= topPoint) hFrac = 0.5 + 0.5 * (level - threshold) / (topPoint - threshold);
+      else { hFrac = 1; excess = Math.min(1, (level - topPoint) / Math.max(0.02, 1 - topPoint)); }
+      var k = 1 + excess * 1.2;        // 频率倍数：最高约 2.2 倍速
+      var grav = 0.7 * k * k;          // 重力和初速同比例放大，高度不变、来回更快
+      var apexPx = hFrac * Math.max(60, H - 90);
       balls.forEach(function (b) {
         if (b.y >= b.baseY - 0.5 && b.vy >= 0) {
-          // 落在底部：按当前音量决定弹跳力度——越响跳得越高，安静时（音量≈0）就停在底部
-          if (level > 0.03) {
-            b.vy = -(level * 30 * b.speed) * (0.85 + Math.random() * 0.3);
+          // 落在底部：按目标高度算弹跳初速，安静时（音量≈0）就停在底部
+          if (level > 0.03 && apexPx > 2) {
+            var f = 0.65 + 0.35 * (b.speed - 0.6) / 1.4; // 每个球高低错开，最快的达到目标高度
+            b.vy = -Math.sqrt(2 * grav * apexPx * f) * (0.9 + Math.random() * 0.2);
             if (b.vy > -1.2) b.vy = -1.2; // 有一点声音至少轻轻颤一下
           } else {
             b.vy = 0; b.y = b.baseY;
           }
         }
         if (b.vy !== 0 || b.y < b.baseY) {
-          b.vy += 0.7; b.y += b.vy;
+          b.vy += grav; b.y += b.vy;
           if (b.y > b.baseY) { b.y = b.baseY; b.vy = 0; }
           if (b.y < b.r) { b.y = b.r; b.vy = Math.abs(b.vy) * 0.55; }
           b.x += Math.sin(now * 1.2 + b.phase) * 0.4 * level;
@@ -141,7 +182,7 @@
     analyser = null; dataArray = null;
   }
   function startDemo() {
-    stopMic(); mode = 'demo'; targetLevel = 0.12; setHint();
+    stopMic(); mode = 'demo'; targetLevel = 0.05; setHint();
   }
   function startMic() {
     if (mode === 'mic') return;
